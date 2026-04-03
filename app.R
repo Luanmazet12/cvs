@@ -2,23 +2,46 @@
 # Conversion du pipeline Python (N. Miguens) en R/Shiny
 
 # Résoudre le répertoire contenant app.R.
-# shiny::runApp() et le bouton "Run App" de RStudio positionnent toujours
-# le répertoire de travail sur le dossier de l'app — getwd() suffit.
-# Pour Rscript app.R, on utilise l'argument --file= en priorité s'il est présent.
+# Fonctionne pour : Rscript app.R, RStudio "Run App", shiny::runApp(),
+# source("app.R"), et double-clic sur app.R (Windows/macOS).
 .app_dir <- local({
+
+  # ---- Helpers ----
+  .norm <- function(p) {
+    tryCatch(
+      normalizePath(p, winslash = "/", mustWork = FALSE),
+      error = function(e) NULL
+    )
+  }
+  .valid <- function(d) !is.null(d) && nzchar(d) && file.exists(file.path(d, "global.R"))
+
   # Priorité 1 : argument --file= (Rscript app.R depuis un autre répertoire)
   rarg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
   if (length(rarg) > 0) {
-    d <- tryCatch(
-      normalizePath(dirname(sub("^--file=", "", rarg[1])), mustWork = FALSE),
-      error = function(e) NULL
-    )
-    if (!is.null(d) && nzchar(d) && file.exists(file.path(d, "global.R")))
-      return(d)
+    d <- .norm(dirname(sub("^--file=", "", rarg[1])))
+    if (.valid(d)) return(d)
   }
 
-  # Priorité 2 : répertoire de travail courant (valeur sûre pour runApp / Run App)
-  normalizePath(getwd(), mustWork = FALSE)
+  # Priorité 2 : fichier actif dans RStudio (bouton "Run App" ou source())
+  if (requireNamespace("rstudioapi", quietly = TRUE)) {
+    d <- tryCatch({
+      ctx <- rstudioapi::getActiveDocumentContext()
+      if (!is.null(ctx) && nzchar(ctx$path)) .norm(dirname(ctx$path)) else NULL
+    }, error = function(e) NULL)
+    if (.valid(d)) return(d)
+  }
+
+  # Priorité 3 : fichier en cours de source() dans la pile d'appels
+  for (i in seq_len(sys.nframe())) {
+    ofile <- tryCatch(sys.frame(i)$ofile, error = function(e) NULL)
+    if (!is.null(ofile) && nzchar(ofile)) {
+      d <- .norm(dirname(ofile))
+      if (.valid(d)) return(d)
+    }
+  }
+
+  # Priorité 4 : répertoire de travail courant (dernier recours)
+  .norm(getwd())
 })
 
 # Charger les variables globales et les packages
