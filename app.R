@@ -603,22 +603,15 @@ server <- function(input, output, session) {
       ))
     }
 
-    # Résumé par session (Player + Date)
-    summary_df <- df %>%
-      dplyr::group_by(Player, Date) %>%
-      dplyr::summarise(
-        `Points outliers détectés` = dplyr::n(),
-        `Seuil (n_error)`          = max(n_error, na.rm = TRUE),
-        `Vitesse max (m/s)`        = round(max(Speed,        na.rm = TRUE), 2),
-        `Acc. max (m/s²)`          = round(max(Acceleration, na.rm = TRUE), 2),
-        .groups = "drop"
-      ) %>%
-      dplyr::mutate(Date = format(Date, "%d/%m/%Y")) %>%
-      dplyr::arrange(Player, Date)
+    # Afficher toutes les colonnes disponibles ; formater les colonnes clés
+    display_df <- df
+    if ("Speed"        %in% colnames(display_df)) display_df$Speed        <- round(display_df$Speed,        3)
+    if ("Acceleration" %in% colnames(display_df)) display_df$Acceleration <- round(display_df$Acceleration, 3)
+    if ("Date"         %in% colnames(display_df)) display_df$Date         <- format(display_df$Date, "%d/%m/%Y")
 
     DT::datatable(
-      summary_df,
-      caption  = "Une ligne = une session (date) entièrement exclue",
+      display_df,
+      caption  = "Points exclus — erreurs d'utilisation (sessions entières exclues)",
       options  = list(pageLength = 10, scrollX = TRUE),
       rownames = FALSE
     )
@@ -641,11 +634,11 @@ server <- function(input, output, session) {
     if (!is.null(input$date_filter) && length(input$date_filter) > 0)
       df <- df[format(df$Date, "%d/%m/%Y") %in% input$date_filter, , drop = FALSE]
 
-    cols <- intersect(c("Player", "Date", "Speed", "Acceleration"), colnames(df))
-    display_df <- df[, cols, drop = FALSE]
-    if ("Speed"        %in% cols) display_df$Speed        <- round(display_df$Speed,        3)
-    if ("Acceleration" %in% cols) display_df$Acceleration <- round(display_df$Acceleration, 3)
-    if ("Date"         %in% cols) display_df$Date         <- format(display_df$Date, "%d/%m/%Y")
+    # Afficher toutes les colonnes disponibles ; formater les colonnes clés
+    display_df <- df
+    if ("Speed"        %in% colnames(display_df)) display_df$Speed        <- round(display_df$Speed,        3)
+    if ("Acceleration" %in% colnames(display_df)) display_df$Acceleration <- round(display_df$Acceleration, 3)
+    if ("Date"         %in% colnames(display_df)) display_df$Date         <- format(display_df$Date, "%d/%m/%Y")
 
     DT::datatable(
       display_df,

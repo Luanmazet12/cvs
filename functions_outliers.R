@@ -54,7 +54,7 @@ read_openfield_csv <- function(file_path, player_name = NULL) {
     encoding         = "UTF-8"
   )
 
-  # --- 3. Renommer et sélectionner les colonnes utiles ---
+  # --- 3. Renommer les colonnes clés et ajouter Date ---
   # Colonnes obligatoires (noms tels qu'ils apparaissent dans l'export OpenField)
   needed <- c("Timestamp", "Velocity", "Acceleration")
   missing_cols <- setdiff(needed, colnames(df))
@@ -62,14 +62,13 @@ read_openfield_csv <- function(file_path, player_name = NULL) {
     stop(paste("Colonnes manquantes dans le CSV :", paste(missing_cols, collapse = ", ")))
   }
 
-  df <- df[, needed, drop = FALSE]
-  colnames(df)[colnames(df) == "Timestamp"] <- "Date"
-  colnames(df)[colnames(df) == "Velocity"]  <- "Speed"
+  # Renommer Velocity → Speed (toutes les autres colonnes CSV sont conservées)
+  colnames(df)[colnames(df) == "Velocity"] <- "Speed"
 
   # --- 4. Convertir les types ---
-  # Extraire la date seule (format "dd/mm/yyyy") depuis le timestamp complet
-  # afin que le regroupement par session dans la détection des outliers fonctionne
-  df$Date         <- as.Date(substr(df$Date, 1, 10), format = "%d/%m/%Y")
+  # Extraire la date seule (format "dd/mm/yyyy") dans une colonne dédiée Date ;
+  # la colonne Timestamp d'origine est conservée avec la valeur complète.
+  df$Date         <- as.Date(substr(df$Timestamp, 1, 10), format = "%d/%m/%Y")
   df$Speed        <- as.numeric(df$Speed)
   df$Acceleration <- as.numeric(df$Acceleration)
 
