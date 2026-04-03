@@ -462,7 +462,8 @@ server <- function(input, output, session) {
   })
 
   output$vbox_negative <- renderValueBox({
-    n <- if (!is.null(outlier_results())) outlier_results()$n_negative else "—"
+    res <- outlier_results()
+    n <- if (!is.null(res)) res$n_negative else "—"
     valueBox(
       value    = n,
       subtitle = "Acc. négatives",
@@ -472,7 +473,8 @@ server <- function(input, output, session) {
   })
 
   output$vbox_clean <- renderValueBox({
-    n <- if (!is.null(outlier_results())) nrow(outlier_results()$correct_points) else "—"
+    res <- outlier_results()
+    n <- if (!is.null(res)) nrow(res$correct_points) else "—"
     valueBox(
       value    = n,
       subtitle = "Points propres",
@@ -482,8 +484,9 @@ server <- function(input, output, session) {
   })
 
   output$vbox_outliers <- renderValueBox({
-    n_misuse  <- if (!is.null(outlier_results())) nrow(outlier_results()$misuse_error) else 0
-    n_measure <- if (!is.null(outlier_results())) nrow(outlier_results()$measurement_error) else 0
+    res       <- outlier_results()
+    n_misuse  <- if (!is.null(res)) nrow(res$misuse_error)      else 0
+    n_measure <- if (!is.null(res)) nrow(res$measurement_error) else 0
     valueBox(
       value    = n_misuse + n_measure,
       subtitle = paste0("Outliers  (util.: ", n_misuse, "  /  DBSCAN: ", n_measure, ")"),
