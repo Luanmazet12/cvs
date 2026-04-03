@@ -391,7 +391,7 @@ server <- function(input, output, session) {
         y     = "Accélération (m/s²)",
         title = "Détection des outliers"
       ) +
-      xlim(0, 11) + ylim(0, 11) +
+      xlim(0, MAX_PLOT_SPEED) + ylim(0, MAX_PLOT_ACCELERATION) +
       theme_minimal()
 
     ggplotly(p)
@@ -445,10 +445,9 @@ server <- function(input, output, session) {
       return(plotly_empty() %>% layout(title = "Données insuffisantes"))
     }
 
-    a0    <- lin$a0_linear
-    s0    <- lin$s0_linear
-    r2    <- lin$r_squared_linear
-    slope <- if (!is.na(s0) && abs(s0) > 1e-10) -a0 / s0 else NA
+    a0 <- lin$a0_linear
+    s0 <- lin$s0_linear
+    r2 <- lin$r_squared_linear
 
     # Ligne de régression (de 0 à s0)
     if (!is.na(s0) && s0 > 0) {
@@ -483,7 +482,7 @@ server <- function(input, output, session) {
         y     = "Accélération (m/s²)",
         title = paste("Régression linéaire :", input$player_select)
       ) +
-      xlim(0, 11) + ylim(0, 11) +
+      xlim(0, MAX_PLOT_SPEED) + ylim(0, MAX_PLOT_ACCELERATION) +
       theme_minimal()
 
     ggplotly(p)
@@ -556,7 +555,7 @@ server <- function(input, output, session) {
         y     = "Accélération (m/s²)",
         title = paste("Régression quantile :", input$player_select)
       ) +
-      xlim(0, 11) + ylim(0, 11) +
+      xlim(0, MAX_PLOT_SPEED) + ylim(0, MAX_PLOT_ACCELERATION) +
       theme_minimal()
 
     ggplotly(p)

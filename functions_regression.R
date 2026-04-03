@@ -64,7 +64,7 @@ linear_regression_player <- function(df) {
   fit <- lm(Acceleration ~ Speed, data = df_clean)
   r2  <- summary(fit)$r.squared
 
-  if (r2 <= 0.5) {
+  if (r2 <= MIN_R_SQUARED) {
     warning(paste(
       "Régression linéaire de mauvaise qualité pour le joueur",
       unique(df$Player), "- R² =", round(r2, 3)
@@ -75,7 +75,7 @@ linear_regression_player <- function(df) {
   slope     <- coef(fit)[["Speed"]]        # b
 
   # s0 = -a0 / b  (intersection avec l'axe des vitesses)
-  s0 <- if (abs(slope) > 1e-10) -intercept / slope else NA_real_
+  s0 <- if (abs(slope) > SLOPE_TOLERANCE) -intercept / slope else NA_real_
 
   list(
     a0        = intercept,
@@ -105,7 +105,7 @@ quantile_regression_player <- function(df, quantiles = QUANTILES) {
       fit       <- quantreg::rq(Acceleration ~ Speed, data = df_clean, tau = q)
       intercept <- coef(fit)[["(Intercept)"]]
       slope     <- coef(fit)[["Speed"]]
-      s0        <- if (abs(slope) > 1e-10) -intercept / slope else NA_real_
+      s0        <- if (abs(slope) > SLOPE_TOLERANCE) -intercept / slope else NA_real_
       data.frame(q = q, a0 = intercept, s0 = s0)
     }, error = function(e) {
       data.frame(q = q, a0 = NA_real_, s0 = NA_real_)

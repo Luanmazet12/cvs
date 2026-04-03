@@ -39,3 +39,13 @@ EPS_DBSCAN    <- 0.5 # epsilon (rayon du voisinage)
 
 # Quantiles calculés pour la régression quantile
 QUANTILES <- seq(0.05, 0.95, by = 0.01)
+
+# Seuil de qualité R² minimal pour la régression linéaire
+MIN_R_SQUARED <- 0.5
+
+# Tolérance numérique pour éviter la division par zéro
+SLOPE_TOLERANCE <- 1e-10
+
+# Limites des axes pour les graphiques (m/s et m/s²)
+MAX_PLOT_SPEED        <- 11
+MAX_PLOT_ACCELERATION <- 11

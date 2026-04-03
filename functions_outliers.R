@@ -70,7 +70,7 @@ read_openfield_csv <- function(file_path, player_name = NULL) {
   df$Speed        <- as.numeric(df$Speed)
   df$Acceleration <- as.numeric(df$Acceleration)
 
-  # Vitesse : km/h → m/s
+  # Vitesse : km/h → m/s (1 km/h = 1/3.6 m/s)
   df$Speed <- df$Speed / 3.6
 
   # Ajouter le nom du joueur
