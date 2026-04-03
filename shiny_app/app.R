@@ -40,7 +40,7 @@ read_openfield_csv <- function(filepath) {
 
   # Si nom vide, utiliser le DeviceId
   if (nchar(athlete) == 0) {
-    device_line <- lines[grep("DeviceId:", lines)]
+    device_line <- lines[grep("DeviceId\\s*:", lines)]
     athlete <- if (length(device_line) > 0) {
       trimws(gsub(".*DeviceId\\s*:\\s*", "", device_line[1]))
     } else "Inconnu"
@@ -278,6 +278,7 @@ plot_linear_regression <- function(points, hi_points, linear_results, player) {
 
   a0 <- reg$`a0 : Regression lineaire`
   s0 <- reg$`s0 : Regression lineaire`
+  r2 <- reg$R2_lineaire
 
   ggplot(p_data, aes(x = Speed, y = Acceleration)) +
     geom_point(alpha = 0.4, size = 1, colour = "#1f77b4") +
@@ -288,6 +289,8 @@ plot_linear_regression <- function(points, hi_points, linear_results, player) {
              label = sprintf("a0 = %.2f m/s²", a0), colour = "red", size = 4) +
     annotate("text", x = 8,  y = 5,
              label = sprintf("s0 = %.2f m/s",  s0), colour = "red", size = 4) +
+    annotate("text", x = 8,  y = 3.5,
+             label = sprintf("R² = %.3f", r2),      colour = "red", size = 4) +
     labs(title = paste("Régression linéaire :", player),
          x = "Vitesse (m/s)", y = "Accélération (m/s²)") +
     coord_cartesian(xlim = c(0, AXIS_MAX_SPEED), ylim = c(0, AXIS_MAX_ACC)) +
