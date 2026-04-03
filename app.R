@@ -1,12 +1,36 @@
 # app.R - Dashboard Shiny - Profilage Accélération-Vitesse
 # Conversion du pipeline Python (N. Miguens) en R/Shiny
 
-# Résoudre les chemins relatifs au répertoire contenant app.R,
-# quel que soit le répertoire de travail courant de la session R.
-.app_dir <- tryCatch(
-  normalizePath(dirname(sys.frame(1)$ofile)),
-  error = function(e) getwd()
-)
+# Résoudre le répertoire contenant app.R de manière robuste,
+# quel que soit le contexte de lancement (source(), runApp(), Rscript, RStudio).
+.app_dir <- local({
+  candidates <- character(0)
+
+  # Stratégie 1 : sys.frame — fonctionne quand on fait source("app.R")
+  d1 <- tryCatch(normalizePath(dirname(sys.frame(1)$ofile)), error = function(e) NA_character_)
+  if (!is.na(d1)) candidates <- c(candidates, d1)
+
+  # Stratégie 2 : répertoire courant — Shiny::runApp() positionne le wd sur le dossier de l'app
+  candidates <- c(candidates, normalizePath(getwd()))
+
+  # Stratégie 3 : argument --file= de Rscript (Rscript app.R)
+  rarg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
+  if (length(rarg) > 0) {
+    d3 <- tryCatch(normalizePath(dirname(sub("^--file=", "", rarg[1]))), error = function(e) NA_character_)
+    if (!is.na(d3)) candidates <- c(candidates, d3)
+  }
+
+  # Retourner le premier candidat où global.R existe réellement
+  valid <- candidates[file.exists(file.path(candidates, "global.R"))]
+  if (length(valid) > 0) return(valid[1])
+
+  stop(paste0(
+    "Impossible de localiser les fichiers sources (global.R, functions_*.R).\n",
+    "Assurez-vous que tous les fichiers du projet sont dans le meme dossier que app.R.\n",
+    "Dans RStudio : Session > Set Working Directory > To Source File Location,\n",
+    "puis relancez l'application."
+  ))
+})
 
 # Charger les variables globales et les packages
 source(file.path(.app_dir, "global.R"))
