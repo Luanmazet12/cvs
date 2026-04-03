@@ -6,18 +6,40 @@
 .app_dir <- local({
   candidates <- character(0)
 
-  # Stratégie 1 : sys.frame — fonctionne quand on fait source("app.R")
-  d1 <- tryCatch(normalizePath(dirname(sys.frame(1)$ofile)), error = function(e) NA_character_)
-  if (!is.na(d1)) candidates <- c(candidates, d1)
+  # Stratégie 1 : rstudioapi — disponible dans RStudio (bouton Run App inclus)
+  if (requireNamespace("rstudioapi", quietly = TRUE) &&
+      rstudioapi::isAvailable()) {
+    d1 <- tryCatch(
+      normalizePath(dirname(rstudioapi::getActiveDocumentContext()$path)),
+      error = function(e) NA_character_
+    )
+    if (!is.na(d1) && nzchar(d1)) candidates <- c(candidates, d1)
+  }
 
-  # Stratégie 2 : répertoire courant — Shiny::runApp() positionne le wd sur le dossier de l'app
+  # Stratégie 2 : parcourir TOUS les frames d'appel pour trouver $ofile
+  # (fonctionne avec source("app.R") quel que soit l'imbrication)
+  for (i in seq_len(sys.nframe())) {
+    d2 <- tryCatch(
+      normalizePath(dirname(sys.frame(i)$ofile)),
+      error = function(e) NA_character_
+    )
+    if (!is.na(d2) && nzchar(d2)) {
+      candidates <- c(candidates, d2)
+      break
+    }
+  }
+
+  # Stratégie 3 : répertoire courant — shiny::runApp() positionne le wd sur le dossier de l'app
   candidates <- c(candidates, normalizePath(getwd()))
 
-  # Stratégie 3 : argument --file= de Rscript (Rscript app.R)
+  # Stratégie 4 : argument --file= de Rscript (Rscript app.R)
   rarg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
   if (length(rarg) > 0) {
-    d3 <- tryCatch(normalizePath(dirname(sub("^--file=", "", rarg[1]))), error = function(e) NA_character_)
-    if (!is.na(d3)) candidates <- c(candidates, d3)
+    d4 <- tryCatch(
+      normalizePath(dirname(sub("^--file=", "", rarg[1]))),
+      error = function(e) NA_character_
+    )
+    if (!is.na(d4) && nzchar(d4)) candidates <- c(candidates, d4)
   }
 
   # Retourner le premier candidat où global.R existe réellement
@@ -26,9 +48,9 @@
 
   stop(paste0(
     "Impossible de localiser les fichiers sources (global.R, functions_*.R).\n",
-    "Assurez-vous que tous les fichiers du projet sont dans le meme dossier que app.R.\n",
-    "Dans RStudio : Session > Set Working Directory > To Source File Location,\n",
-    "puis relancez l'application."
+    "Assurez-vous que tous les fichiers du projet sont dans le meme dossier que app.R,\n",
+    "puis dans RStudio : Session > Set Working Directory > To Source File Location\n",
+    "et relancez l'application."
   ))
 })
 
