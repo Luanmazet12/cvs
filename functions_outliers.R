@@ -67,6 +67,9 @@ read_openfield_csv <- function(file_path, player_name = NULL) {
   colnames(df)[colnames(df) == "Velocity"]  <- "Speed"
 
   # --- 4. Convertir les types ---
+  # Extraire la date seule (format "dd/mm/yyyy") depuis le timestamp complet
+  # afin que le regroupement par session dans la détection des outliers fonctionne
+  df$Date         <- as.Date(substr(df$Date, 1, 10), format = "%d/%m/%Y")
   df$Speed        <- as.numeric(df$Speed)
   df$Acceleration <- as.numeric(df$Acceleration)
 

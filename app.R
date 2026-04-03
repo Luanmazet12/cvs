@@ -115,6 +115,16 @@ ui <- dashboardPage(
         ),
         fluidRow(
           box(
+            title = "Filtres d'affichage",
+            width = 12,
+            status = "primary",
+            solidHeader = FALSE,
+            collapsible = TRUE,
+            uiOutput("outlier_filters_ui")
+          )
+        ),
+        fluidRow(
+          box(
             title = "Scatter plot - Points propres et outliers",
             width = 12,
             status = "warning",
@@ -326,6 +336,47 @@ server <- function(input, output, session) {
 
   # ---- Onglet Outliers ----
 
+  # Filtres dynamiques (speed + accélération), disponibles après analyse
+  output$outlier_filters_ui <- renderUI({
+    req(outlier_results())
+    res <- outlier_results()
+
+    all_speeds <- c(
+      res$correct_points$Speed,
+      if (nrow(res$misuse_error)      > 0) res$misuse_error$Speed      else NULL,
+      if (nrow(res$measurement_error) > 0) res$measurement_error$Speed else NULL
+    )
+    all_accels <- c(
+      res$correct_points$Acceleration,
+      if (nrow(res$misuse_error)      > 0) res$misuse_error$Acceleration      else NULL,
+      if (nrow(res$measurement_error) > 0) res$measurement_error$Acceleration else NULL
+    )
+
+    speed_max <- ceiling(max(all_speeds, na.rm = TRUE) * 2) / 2
+    accel_max <- ceiling(max(all_accels, na.rm = TRUE) * 2) / 2
+
+    fluidRow(
+      column(6,
+        sliderInput(
+          "speed_range",
+          "Plage de vitesse (m/s) :",
+          min = 0, max = speed_max,
+          value = c(0, speed_max),
+          step = 0.5
+        )
+      ),
+      column(6,
+        sliderInput(
+          "accel_range",
+          "Plage d'accélération (m/s²) :",
+          min = 0, max = accel_max,
+          value = c(0, accel_max),
+          step = 0.5
+        )
+      )
+    )
+  })
+
   output$vbox_total <- renderValueBox({
     req(raw_data())
     valueBox(
@@ -377,6 +428,20 @@ server <- function(input, output, session) {
       if (nrow(measure) > 0) measure[, c("Speed", "Acceleration", "Player", "type")] else NULL
     )
 
+    # Appliquer les filtres vitesse / accélération si disponibles
+    if (!is.null(input$speed_range)) {
+      all_pts <- all_pts[
+        all_pts$Speed >= input$speed_range[1] &
+          all_pts$Speed <= input$speed_range[2], , drop = FALSE
+      ]
+    }
+    if (!is.null(input$accel_range)) {
+      all_pts <- all_pts[
+        all_pts$Acceleration >= input$accel_range[1] &
+          all_pts$Acceleration <= input$accel_range[2], , drop = FALSE
+      ]
+    }
+
     color_map <- c(
       "Points propres"         = "#2196F3",
       "Erreur utilisation"     = "#000000",
@@ -400,6 +465,15 @@ server <- function(input, output, session) {
   output$misuse_table <- DT::renderDataTable({
     req(outlier_results())
     df <- outlier_results()$misuse_error
+
+    # Appliquer les filtres vitesse / accélération si disponibles
+    if (!is.null(input$speed_range) && nrow(df) > 0) {
+      df <- df[df$Speed >= input$speed_range[1] & df$Speed <= input$speed_range[2], , drop = FALSE]
+    }
+    if (!is.null(input$accel_range) && nrow(df) > 0) {
+      df <- df[df$Acceleration >= input$accel_range[1] & df$Acceleration <= input$accel_range[2], , drop = FALSE]
+    }
+
     DT::datatable(
       df[, intersect(c("Player", "Date", "Speed", "Acceleration"), colnames(df))],
       options  = list(pageLength = 10, scrollX = TRUE),
@@ -410,6 +484,15 @@ server <- function(input, output, session) {
   output$measurement_table <- DT::renderDataTable({
     req(outlier_results())
     df <- outlier_results()$measurement_error
+
+    # Appliquer les filtres vitesse / accélération si disponibles
+    if (!is.null(input$speed_range) && nrow(df) > 0) {
+      df <- df[df$Speed >= input$speed_range[1] & df$Speed <= input$speed_range[2], , drop = FALSE]
+    }
+    if (!is.null(input$accel_range) && nrow(df) > 0) {
+      df <- df[df$Acceleration >= input$accel_range[1] & df$Acceleration <= input$accel_range[2], , drop = FALSE]
+    }
+
     DT::datatable(
       df[, intersect(c("Player", "Date", "Speed", "Acceleration"), colnames(df))],
       options  = list(pageLength = 10, scrollX = TRUE),
