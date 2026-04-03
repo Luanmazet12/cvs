@@ -4,10 +4,13 @@
 
 #' Lecture et nettoyage du fichier CSV OpenField
 #'
-#' @param file_path  Chemin vers le fichier CSV
+#' @param file_path   Chemin vers le fichier CSV
 #' @param player_name Nom du joueur (extrait du header ou fourni)
-#' @return data.frame avec les colonnes Player, Date, Speed (m/s), Acceleration
-read_openfield_csv <- function(file_path, player_name = NULL) {
+#' @param min_quality Qualité positionnelle minimale (%); lignes en-dessous exclues (NA = pas de filtre)
+#' @param max_hdop    HDOP maximal; lignes au-dessus exclues (NA = pas de filtre)
+#' @return data.frame avec toutes les colonnes CSV + Player, Date, Speed (m/s)
+read_openfield_csv <- function(file_path, player_name = NULL,
+                                min_quality = NA, max_hdop = NA) {
 
   # --- 1. Lire les lignes brutes pour extraire les métadonnées du header ---
   raw_lines <- readLines(file_path, warn = FALSE, encoding = "UTF-8")
@@ -81,6 +84,21 @@ read_openfield_csv <- function(file_path, player_name = NULL) {
   # Supprimer les lignes avec NA dans les colonnes clés
   df <- df[!is.na(df$Speed) & !is.na(df$Acceleration), ]
 
+  # --- 5. Filtres de qualité GPS (optionnels) ---
+  # Positional Quality (%) : conserver uniquement les lignes >= min_quality
+  qual_col <- grep("^Positional.Quality", colnames(df), value = TRUE)[1]
+  if (!is.na(min_quality) && !is.null(qual_col) && !is.na(qual_col)) {
+    df[[qual_col]] <- suppressWarnings(as.numeric(df[[qual_col]]))
+    df <- df[!is.na(df[[qual_col]]) & df[[qual_col]] >= min_quality, , drop = FALSE]
+  }
+
+  # HDOP : conserver uniquement les lignes <= max_hdop
+  hdop_col <- grep("^HDOP$", colnames(df), value = TRUE, ignore.case = TRUE)[1]
+  if (!is.na(max_hdop) && !is.null(hdop_col) && !is.na(hdop_col)) {
+    df[[hdop_col]] <- suppressWarnings(as.numeric(df[[hdop_col]]))
+    df <- df[!is.na(df[[hdop_col]]) & df[[hdop_col]] <= max_hdop, , drop = FALSE]
+  }
+
   return(df)
 }
 
@@ -115,7 +133,8 @@ identify_misuse_errors <- function(correct_points, nb_outlier = NB_OUTLIER) {
   ]
 
   if (nrow(outliers) == 0) {
-    return(list(correct_points = correct_points, misuse_error = data.frame()))
+    return(list(correct_points = correct_points,
+                misuse_error   = correct_points[0L, , drop = FALSE]))
   }
 
   # Compter le nombre d'outliers par session (Player + Date)
@@ -127,7 +146,10 @@ identify_misuse_errors <- function(correct_points, nb_outlier = NB_OUTLIER) {
   outliers <- outliers[outliers$n_error >= nb_outlier, , drop = FALSE]
 
   if (nrow(outliers) == 0) {
-    return(list(correct_points = correct_points, misuse_error = data.frame()))
+    empty <- correct_points[0L, , drop = FALSE]
+    empty$n_error <- integer(0)
+    return(list(correct_points = correct_points,
+                misuse_error   = empty))
   }
 
   # Supprimer toutes les sessions (Date) contenant des outliers
@@ -173,7 +195,8 @@ identify_measurement_errors <- function(correct_points,
   sample_pts <- correct_points[sample_idx, , drop = FALSE]
 
   if (nrow(sample_pts) == 0) {
-    return(list(correct_points = correct_points, measurement_error = data.frame()))
+    return(list(correct_points    = correct_points,
+                measurement_error = correct_points[0L, , drop = FALSE]))
   }
 
   # Ajouter un index de ligne pour relier les résultats

@@ -74,6 +74,13 @@ ui <- dashboardPage(
 
     hr(),
 
+    # ----- Filtres qualité GPS -----
+    h5("Filtres qualité GPS", style = "padding-left: 10px; color: #aaa;"),
+    numericInput("max_hdop",    "HDOP maximum (précision GPS)",       value = 5,  min = 0.1, step = 0.1),
+    numericInput("min_quality", "Qualité positionnelle min (%)",      value = 0,  min = 0,   max = 100, step = 5),
+
+    hr(),
+
     # ----- Paramètres régression -----
     h5("Paramètres Régression", style = "padding-left: 10px; color: #aaa;"),
     numericInput("dv",    "Intervalle vitesse dv (m/s)", value = 0.3, min = 0.05, step = 0.05),
@@ -169,14 +176,36 @@ ui <- dashboardPage(
             width = 6,
             status = "danger",
             solidHeader = TRUE,
-            DT::dataTableOutput("misuse_table")
+            DT::dataTableOutput("misuse_table"),
+            hr(),
+            downloadButton("download_misuse", "Télécharger erreurs utilisation", class = "btn-sm btn-danger")
           ),
           box(
             title = "Erreurs de mesure (DBSCAN) — Points exclus",
             width = 6,
             status = "warning",
             solidHeader = TRUE,
-            DT::dataTableOutput("measurement_table")
+            DT::dataTableOutput("measurement_table"),
+            hr(),
+            downloadButton("download_measurement", "Télécharger erreurs mesure", class = "btn-sm btn-warning")
+          )
+        ),
+        fluidRow(
+          box(
+            title = "Statistiques par joueur",
+            width = 9,
+            status = "info",
+            solidHeader = TRUE,
+            collapsible = TRUE,
+            DT::dataTableOutput("player_stats_table")
+          ),
+          box(
+            title = "Données propres",
+            width = 3,
+            status = "success",
+            solidHeader = TRUE,
+            p("Télécharger les données après nettoyage (utilisées pour la régression)."),
+            downloadButton("download_clean", "Télécharger données propres", class = "btn-sm btn-success")
           )
         )
       ),
@@ -253,7 +282,9 @@ server <- function(input, output, session) {
         player_name <- trimws(input$player_name)
         if (nchar(player_name) == 0) player_name <- NULL
 
-        df <- read_openfield_csv(input$csv_file$datapath, player_name)
+        df <- read_openfield_csv(input$csv_file$datapath, player_name,
+                                 min_quality = input$min_quality,
+                                 max_hdop    = input$max_hdop)
         setProgress(1, message = "Fichier chargé avec succès.")
         df
       }, error = function(e) {
@@ -590,20 +621,7 @@ server <- function(input, output, session) {
       ))
     }
 
-    # Appliquer filtres joueur / date
-    if (!is.null(input$player_filter) && nzchar(input$player_filter))
-      df <- df[df$Player == input$player_filter, , drop = FALSE]
-    if (!is.null(input$date_filter) && length(input$date_filter) > 0)
-      df <- df[format(df$Date, "%d/%m/%Y") %in% input$date_filter, , drop = FALSE]
-
-    if (nrow(df) == 0) {
-      return(DT::datatable(
-        data.frame(Message = "Aucune session visible avec les filtres actuels"),
-        options = list(dom = "t"), rownames = FALSE
-      ))
-    }
-
-    # Afficher toutes les colonnes disponibles ; formater les colonnes clés
+    # Formater les colonnes clés pour l'affichage
     display_df <- df
     if ("Speed"        %in% colnames(display_df)) display_df$Speed        <- round(display_df$Speed,        3)
     if ("Acceleration" %in% colnames(display_df)) display_df$Acceleration <- round(display_df$Acceleration, 3)
@@ -612,6 +630,7 @@ server <- function(input, output, session) {
     DT::datatable(
       display_df,
       caption  = "Points exclus — erreurs d'utilisation (sessions entières exclues)",
+      filter   = "top",
       options  = list(pageLength = 10, scrollX = TRUE),
       rownames = FALSE
     )
@@ -628,13 +647,7 @@ server <- function(input, output, session) {
       ))
     }
 
-    # Appliquer filtres joueur / date
-    if (!is.null(input$player_filter) && nzchar(input$player_filter))
-      df <- df[df$Player == input$player_filter, , drop = FALSE]
-    if (!is.null(input$date_filter) && length(input$date_filter) > 0)
-      df <- df[format(df$Date, "%d/%m/%Y") %in% input$date_filter, , drop = FALSE]
-
-    # Afficher toutes les colonnes disponibles ; formater les colonnes clés
+    # Formater les colonnes clés pour l'affichage
     display_df <- df
     if ("Speed"        %in% colnames(display_df)) display_df$Speed        <- round(display_df$Speed,        3)
     if ("Acceleration" %in% colnames(display_df)) display_df$Acceleration <- round(display_df$Acceleration, 3)
@@ -644,10 +657,96 @@ server <- function(input, output, session) {
       display_df,
       caption  = paste0("Points exclus par DBSCAN (eps=", input$eps_dbscan,
                         ", minPts=", input$neighb_dbscan, ")"),
+      filter   = "top",
       options  = list(pageLength = 15, scrollX = TRUE),
       rownames = FALSE
     )
   })
+
+  # ---- Statistiques par joueur après nettoyage ----
+
+  output$player_stats_table <- DT::renderDataTable({
+    req(outlier_results(), raw_data())
+    res   <- outlier_results()
+    n_raw <- nrow(raw_data())
+
+    players <- sort(unique(raw_data()$Player))
+
+    stats_rows <- lapply(players, function(p) {
+      n_p_raw   <- sum(raw_data()$Player == p)
+
+      mis  <- res$misuse_error
+      meas <- res$measurement_error
+      cln  <- res$correct_points
+
+      n_mis  <- if (nrow(mis)  > 0) sum(mis$Player  == p) else 0L
+      n_meas <- if (nrow(meas) > 0) sum(meas$Player == p) else 0L
+      n_cln  <- sum(cln$Player == p)
+
+      sess_excl <- if (n_mis > 0) length(unique(mis$Date[mis$Player == p])) else 0L
+      pct_kept  <- if (n_p_raw > 0) round(100 * n_cln / n_p_raw, 1) else NA_real_
+
+      data.frame(
+        Joueur                      = p,
+        `Points bruts`              = n_p_raw,
+        `Erreurs utilisation`       = n_mis,
+        `Sessions exclues`          = sess_excl,
+        `Erreurs mesure (DBSCAN)`   = n_meas,
+        `Points propres conservés`  = n_cln,
+        `% conservé`                = pct_kept,
+        check.names = FALSE,
+        stringsAsFactors = FALSE
+      )
+    })
+
+    stats_df <- do.call(rbind, stats_rows)
+
+    DT::datatable(
+      stats_df,
+      caption  = "Résumé du nettoyage par joueur",
+      options  = list(pageLength = 20, scrollX = TRUE, dom = "tip"),
+      rownames = FALSE
+    ) %>%
+      DT::formatStyle(
+        "% conservé",
+        background         = DT::styleColorBar(c(0, 100), "#b3d9ff"),
+        backgroundSize     = "100% 90%",
+        backgroundRepeat   = "no-repeat",
+        backgroundPosition = "center"
+      )
+  })
+
+  # ---- Téléchargements ----
+
+  output$download_clean <- downloadHandler(
+    filename = function() paste0("donnees_propres_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
+    content  = function(file) {
+      req(outlier_results())
+      df <- outlier_results()$correct_points
+      if ("Date" %in% colnames(df)) df$Date <- format(df$Date, "%d/%m/%Y")
+      write.csv(df, file, row.names = FALSE)
+    }
+  )
+
+  output$download_misuse <- downloadHandler(
+    filename = function() paste0("erreurs_utilisation_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
+    content  = function(file) {
+      req(outlier_results())
+      df <- outlier_results()$misuse_error
+      if ("Date" %in% colnames(df)) df$Date <- format(df$Date, "%d/%m/%Y")
+      write.csv(df, file, row.names = FALSE)
+    }
+  )
+
+  output$download_measurement <- downloadHandler(
+    filename = function() paste0("erreurs_mesure_DBSCAN_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
+    content  = function(file) {
+      req(outlier_results())
+      df <- outlier_results()$measurement_error
+      if ("Date" %in% colnames(df)) df$Date <- format(df$Date, "%d/%m/%Y")
+      write.csv(df, file, row.names = FALSE)
+    }
+  )
 
   # ---- Onglet Régression ----
 
