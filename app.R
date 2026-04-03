@@ -1,10 +1,17 @@
 # app.R - Dashboard Shiny - Profilage Accélération-Vitesse
 # Conversion du pipeline Python (N. Miguens) en R/Shiny
 
+# Résoudre les chemins relatifs au répertoire contenant app.R,
+# quel que soit le répertoire de travail courant de la session R.
+.app_dir <- tryCatch(
+  normalizePath(dirname(sys.frame(1)$ofile)),
+  error = function(e) getwd()
+)
+
 # Charger les variables globales et les packages
-source("global.R")
-source("functions_outliers.R")
-source("functions_regression.R")
+source(file.path(.app_dir, "global.R"))
+source(file.path(.app_dir, "functions_outliers.R"))
+source(file.path(.app_dir, "functions_regression.R"))
 
 # ============================================================
 # INTERFACE UTILISATEUR
