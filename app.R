@@ -1,57 +1,24 @@
 # app.R - Dashboard Shiny - Profilage Accélération-Vitesse
 # Conversion du pipeline Python (N. Miguens) en R/Shiny
 
-# Résoudre le répertoire contenant app.R de manière robuste,
-# quel que soit le contexte de lancement (source(), runApp(), Rscript, RStudio).
+# Résoudre le répertoire contenant app.R.
+# shiny::runApp() et le bouton "Run App" de RStudio positionnent toujours
+# le répertoire de travail sur le dossier de l'app — getwd() suffit.
+# Pour Rscript app.R, on utilise l'argument --file= en priorité s'il est présent.
 .app_dir <- local({
-  candidates <- character(0)
-
-  # Stratégie 1 : rstudioapi — disponible dans RStudio (bouton Run App inclus)
-  if (requireNamespace("rstudioapi", quietly = TRUE) &&
-      rstudioapi::isAvailable()) {
-    d1 <- tryCatch(
-      normalizePath(dirname(rstudioapi::getActiveDocumentContext()$path)),
-      error = function(e) NA_character_
-    )
-    if (!is.na(d1) && nzchar(d1)) candidates <- c(candidates, d1)
-  }
-
-  # Stratégie 2 : parcourir TOUS les frames d'appel pour trouver $ofile
-  # (fonctionne avec source("app.R") quel que soit l'imbrication)
-  for (i in seq_len(sys.nframe())) {
-    d2 <- tryCatch(
-      normalizePath(dirname(sys.frame(i)$ofile)),
-      error = function(e) NA_character_
-    )
-    if (!is.na(d2) && nzchar(d2)) {
-      candidates <- c(candidates, d2)
-      break
-    }
-  }
-
-  # Stratégie 3 : répertoire courant — shiny::runApp() positionne le wd sur le dossier de l'app
-  candidates <- c(candidates, normalizePath(getwd()))
-
-  # Stratégie 4 : argument --file= de Rscript (Rscript app.R)
+  # Priorité 1 : argument --file= (Rscript app.R depuis un autre répertoire)
   rarg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
   if (length(rarg) > 0) {
-    d4 <- tryCatch(
-      normalizePath(dirname(sub("^--file=", "", rarg[1]))),
-      error = function(e) NA_character_
+    d <- tryCatch(
+      normalizePath(dirname(sub("^--file=", "", rarg[1])), mustWork = FALSE),
+      error = function(e) NULL
     )
-    if (!is.na(d4) && nzchar(d4)) candidates <- c(candidates, d4)
+    if (!is.null(d) && nzchar(d) && file.exists(file.path(d, "global.R")))
+      return(d)
   }
 
-  # Retourner le premier candidat où global.R existe réellement
-  valid <- candidates[file.exists(file.path(candidates, "global.R"))]
-  if (length(valid) > 0) return(valid[1])
-
-  stop(paste0(
-    "Impossible de localiser les fichiers sources (global.R, functions_*.R).\n",
-    "Assurez-vous que tous les fichiers du projet sont dans le meme dossier que app.R,\n",
-    "puis dans RStudio : Session > Set Working Directory > To Source File Location\n",
-    "et relancez l'application."
-  ))
+  # Priorité 2 : répertoire de travail courant (valeur sûre pour runApp / Run App)
+  normalizePath(getwd(), mustWork = FALSE)
 })
 
 # Charger les variables globales et les packages
