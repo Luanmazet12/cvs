@@ -116,9 +116,20 @@ ui <- dashboardPage(
       tabItem(
         tabName = "tab_outliers",
         fluidRow(
-          valueBoxOutput("vbox_total",    width = 4),
-          valueBoxOutput("vbox_clean",    width = 4),
-          valueBoxOutput("vbox_outliers", width = 4)
+          valueBoxOutput("vbox_total",       width = 3),
+          valueBoxOutput("vbox_negative",    width = 3),
+          valueBoxOutput("vbox_clean",       width = 3),
+          valueBoxOutput("vbox_outliers",    width = 3)
+        ),
+        fluidRow(
+          box(
+            title = "Résumé du nettoyage",
+            width = 12,
+            status = "info",
+            solidHeader = TRUE,
+            collapsible = TRUE,
+            verbatimTextOutput("cleaning_summary")
+          )
         ),
         fluidRow(
           box(
@@ -141,14 +152,14 @@ ui <- dashboardPage(
         ),
         fluidRow(
           box(
-            title = "Erreurs de mauvaise utilisation",
+            title = "Erreurs d'utilisation — Sessions exclues",
             width = 6,
             status = "danger",
             solidHeader = TRUE,
             DT::dataTableOutput("misuse_table")
           ),
           box(
-            title = "Erreurs de mesure (DBSCAN)",
+            title = "Erreurs de mesure (DBSCAN) — Points exclus",
             width = 6,
             status = "warning",
             solidHeader = TRUE,
@@ -343,42 +354,98 @@ server <- function(input, output, session) {
 
   # ---- Onglet Outliers ----
 
-  # Filtres dynamiques (speed + accélération), disponibles après analyse
-  output$outlier_filters_ui <- renderUI({
+  # Reactive combinant tous les points étiquetés (propres + outliers)
+  all_outlier_pts <- reactive({
     req(outlier_results())
     res <- outlier_results()
 
-    all_speeds <- c(
-      res$correct_points$Speed,
-      if (nrow(res$misuse_error)      > 0) res$misuse_error$Speed      else NULL,
-      if (nrow(res$measurement_error) > 0) res$measurement_error$Speed else NULL
-    )
-    all_accels <- c(
-      res$correct_points$Acceleration,
-      if (nrow(res$misuse_error)      > 0) res$misuse_error$Acceleration      else NULL,
-      if (nrow(res$measurement_error) > 0) res$measurement_error$Acceleration else NULL
-    )
+    clean         <- res$correct_points
+    clean$type    <- "Points propres"
 
-    speed_max <- ceiling(max(all_speeds, na.rm = TRUE) * 2) / 2
-    accel_max <- ceiling(max(all_accels, na.rm = TRUE) * 2) / 2
+    misuse        <- res$misuse_error
+    if (nrow(misuse) > 0)  misuse$type  <- "Erreur utilisation"
 
-    fluidRow(
-      column(6,
-        sliderInput(
-          "speed_range",
-          "Plage de vitesse (m/s) :",
-          min = 0, max = speed_max,
-          value = c(0, speed_max),
-          step = 0.5
+    measure       <- res$measurement_error
+    if (nrow(measure) > 0) measure$type <- "Erreur mesure (DBSCAN)"
+
+    needed <- c("Speed", "Acceleration", "Player", "Date", "type")
+    dplyr::bind_rows(
+      clean[,  intersect(needed, colnames(clean)),  drop = FALSE],
+      if (nrow(misuse)  > 0) misuse[,  intersect(needed, colnames(misuse)),  drop = FALSE] else NULL,
+      if (nrow(measure) > 0) measure[, intersect(needed, colnames(measure)), drop = FALSE] else NULL
+    )
+  })
+
+  # Reactive : points après application de tous les filtres actifs
+  filtered_outlier_pts <- reactive({
+    req(all_outlier_pts())
+    df <- all_outlier_pts()
+
+    if (!is.null(input$speed_range))
+      df <- df[df$Speed >= input$speed_range[1] & df$Speed <= input$speed_range[2], , drop = FALSE]
+
+    if (!is.null(input$accel_range))
+      df <- df[df$Acceleration >= input$accel_range[1] & df$Acceleration <= input$accel_range[2], , drop = FALSE]
+
+    if (!is.null(input$type_filter) && length(input$type_filter) > 0)
+      df <- df[df$type %in% input$type_filter, , drop = FALSE]
+
+    if (!is.null(input$player_filter) && nzchar(input$player_filter))
+      df <- df[df$Player == input$player_filter, , drop = FALSE]
+
+    if (!is.null(input$date_filter) && length(input$date_filter) > 0)
+      df <- df[format(df$Date, "%d/%m/%Y") %in% input$date_filter, , drop = FALSE]
+
+    df
+  })
+
+  # Filtres dynamiques (speed, accélération, type, joueur, dates)
+  output$outlier_filters_ui <- renderUI({
+    req(all_outlier_pts())
+    df <- all_outlier_pts()
+
+    speed_max   <- ceiling(max(df$Speed,        na.rm = TRUE) * 2) / 2
+    accel_max   <- ceiling(max(df$Acceleration, na.rm = TRUE) * 2) / 2
+    players     <- sort(unique(df$Player))
+    all_dates   <- sort(unique(df$Date))
+    date_labels <- format(all_dates, "%d/%m/%Y")
+
+    tagList(
+      fluidRow(
+        column(4,
+          sliderInput("speed_range", "Plage de vitesse (m/s) :",
+                      min = 0, max = speed_max, value = c(0, speed_max), step = 0.5)
+        ),
+        column(4,
+          sliderInput("accel_range", "Plage d'accélération (m/s²) :",
+                      min = 0, max = accel_max, value = c(0, accel_max), step = 0.5)
+        ),
+        column(4,
+          checkboxGroupInput(
+            "type_filter",
+            "Types de points affichés :",
+            choices  = c("Points propres", "Erreur utilisation", "Erreur mesure (DBSCAN)"),
+            selected = c("Points propres", "Erreur utilisation", "Erreur mesure (DBSCAN)"),
+            inline   = TRUE
+          )
         )
       ),
-      column(6,
-        sliderInput(
-          "accel_range",
-          "Plage d'accélération (m/s²) :",
-          min = 0, max = accel_max,
-          value = c(0, accel_max),
-          step = 0.5
+      fluidRow(
+        if (length(players) > 1) {
+          column(3,
+            selectInput("player_filter", "Joueur :",
+                        choices  = c("Tous" = "", players),
+                        selected = "")
+          )
+        } else NULL,
+        column(if (length(players) > 1) 9 else 12,
+          checkboxGroupInput(
+            "date_filter",
+            "Sessions à afficher :",
+            choices  = setNames(date_labels, date_labels),
+            selected = date_labels,
+            inline   = TRUE
+          )
         )
       )
     )
@@ -391,6 +458,16 @@ server <- function(input, output, session) {
       subtitle = "Points bruts",
       icon     = icon("database"),
       color    = "blue"
+    )
+  })
+
+  output$vbox_negative <- renderValueBox({
+    n <- if (!is.null(outlier_results())) outlier_results()$n_negative else "—"
+    valueBox(
+      value    = n,
+      subtitle = "Acc. négatives",
+      icon     = icon("minus-circle"),
+      color    = "purple"
     )
   })
 
@@ -409,44 +486,61 @@ server <- function(input, output, session) {
     n_measure <- if (!is.null(outlier_results())) nrow(outlier_results()$measurement_error) else 0
     valueBox(
       value    = n_misuse + n_measure,
-      subtitle = "Outliers détectés",
+      subtitle = paste0("Outliers  (util.: ", n_misuse, "  /  DBSCAN: ", n_measure, ")"),
       icon     = icon("exclamation-triangle"),
       color    = "red"
     )
   })
 
-  output$outlier_plot <- renderPlotly({
+  # Résumé textuel du nettoyage étape par étape
+  output$cleaning_summary <- renderPrint({
     req(outlier_results())
-    res <- outlier_results()
+    res     <- outlier_results()
+    n_raw   <- nrow(raw_data())
+    n_neg   <- res$n_negative
+    n_mis   <- nrow(res$misuse_error)
+    n_dbs   <- nrow(res$measurement_error)
+    n_clean <- nrow(res$correct_points)
 
-    # Construire un data.frame annoté
-    clean <- res$correct_points
-    clean$type <- "Points propres"
+    cat("══════════════════════════════════════════════════════\n")
+    cat("  RÉSUMÉ DU NETTOYAGE DES DONNÉES\n")
+    cat("══════════════════════════════════════════════════════\n")
+    cat(sprintf("  Points bruts (CSV)                  : %6d\n", n_raw))
+    cat(sprintf("  — Accélérations négatives supprimées: %6d\n", n_neg))
 
-    misuse <- res$misuse_error
-    if (nrow(misuse) > 0) misuse$type <- "Erreur utilisation"
-
-    measure <- res$measurement_error
-    if (nrow(measure) > 0) measure$type <- "Erreur mesure (DBSCAN)"
-
-    all_pts <- dplyr::bind_rows(
-      clean[, c("Speed", "Acceleration", "Player", "type")],
-      if (nrow(misuse)  > 0) misuse[,  c("Speed", "Acceleration", "Player", "type")] else NULL,
-      if (nrow(measure) > 0) measure[, c("Speed", "Acceleration", "Player", "type")] else NULL
-    )
-
-    # Appliquer les filtres vitesse / accélération si disponibles
-    if (!is.null(input$speed_range)) {
-      all_pts <- all_pts[
-        all_pts$Speed >= input$speed_range[1] &
-          all_pts$Speed <= input$speed_range[2], , drop = FALSE
-      ]
+    cat(sprintf("\n  — Erreurs d'utilisation             : %6d points détectés\n", n_mis))
+    if (n_mis > 0) {
+      sess <- unique(res$misuse_error[, c("Player", "Date"), drop = FALSE])
+      sess <- sess[order(sess$Player, sess$Date), ]
+      cat(sprintf("       Sessions entières exclues : %d\n", nrow(sess)))
+      for (i in seq_len(nrow(sess))) {
+        n_pts <- sum(res$misuse_error$Player == sess$Player[i] &
+                       res$misuse_error$Date == sess$Date[i])
+        cat(sprintf("         • %-25s  %s  (%d points au-dessus du seuil)\n",
+                    sess$Player[i],
+                    format(sess$Date[i], "%d/%m/%Y"),
+                    n_pts))
+      }
     }
-    if (!is.null(input$accel_range)) {
-      all_pts <- all_pts[
-        all_pts$Acceleration >= input$accel_range[1] &
-          all_pts$Acceleration <= input$accel_range[2], , drop = FALSE
-      ]
+
+    cat(sprintf("\n  — Erreurs de mesure (DBSCAN)        : %6d points exclus\n", n_dbs))
+    if (n_dbs > 0) {
+      by_player <- tapply(seq_len(n_dbs), res$measurement_error$Player, length)
+      for (p in names(by_player))
+        cat(sprintf("         • %-25s  %d points\n", p, by_player[[p]]))
+    }
+
+    pct <- if (n_raw > 0) sprintf("%.1f %%", 100 * n_clean / n_raw) else "—"
+    cat(sprintf("\n  Points propres conservés            : %6d  (%s)\n", n_clean, pct))
+    cat("══════════════════════════════════════════════════════\n")
+  })
+
+  output$outlier_plot <- renderPlotly({
+    req(filtered_outlier_pts())
+    pts <- filtered_outlier_pts()
+
+    if (nrow(pts) == 0) {
+      return(plotly_empty() %>% layout(title = "Aucun point à afficher avec les filtres actuels"))
     }
 
     color_map <- c(
@@ -455,7 +549,7 @@ server <- function(input, output, session) {
       "Erreur mesure (DBSCAN)" = "#F44336"
     )
 
-    p <- ggplot(all_pts, aes(x = Speed, y = Acceleration, color = type, text = Player)) +
+    p <- ggplot(pts, aes(x = Speed, y = Acceleration, color = type, text = Player)) +
       geom_point(alpha = 0.5, size = 1.2) +
       scale_color_manual(values = color_map, name = "Type de point") +
       labs(
@@ -473,16 +567,42 @@ server <- function(input, output, session) {
     req(outlier_results())
     df <- outlier_results()$misuse_error
 
-    # Appliquer les filtres vitesse / accélération si disponibles
-    if (!is.null(input$speed_range) && nrow(df) > 0) {
-      df <- df[df$Speed >= input$speed_range[1] & df$Speed <= input$speed_range[2], , drop = FALSE]
-    }
-    if (!is.null(input$accel_range) && nrow(df) > 0) {
-      df <- df[df$Acceleration >= input$accel_range[1] & df$Acceleration <= input$accel_range[2], , drop = FALSE]
+    if (nrow(df) == 0) {
+      return(DT::datatable(
+        data.frame(Message = "Aucune erreur d'utilisation détectée"),
+        options = list(dom = "t"), rownames = FALSE
+      ))
     }
 
+    # Appliquer filtres joueur / date
+    if (!is.null(input$player_filter) && nzchar(input$player_filter))
+      df <- df[df$Player == input$player_filter, , drop = FALSE]
+    if (!is.null(input$date_filter) && length(input$date_filter) > 0)
+      df <- df[format(df$Date, "%d/%m/%Y") %in% input$date_filter, , drop = FALSE]
+
+    if (nrow(df) == 0) {
+      return(DT::datatable(
+        data.frame(Message = "Aucune session visible avec les filtres actuels"),
+        options = list(dom = "t"), rownames = FALSE
+      ))
+    }
+
+    # Résumé par session (Player + Date)
+    summary_df <- df %>%
+      dplyr::group_by(Player, Date) %>%
+      dplyr::summarise(
+        `Points outliers détectés` = dplyr::n(),
+        `Seuil (n_error)`          = max(n_error, na.rm = TRUE),
+        `Vitesse max (m/s)`        = round(max(Speed,        na.rm = TRUE), 2),
+        `Acc. max (m/s²)`          = round(max(Acceleration, na.rm = TRUE), 2),
+        .groups = "drop"
+      ) %>%
+      dplyr::mutate(Date = format(Date, "%d/%m/%Y")) %>%
+      dplyr::arrange(Player, Date)
+
     DT::datatable(
-      df[, intersect(c("Player", "Date", "Speed", "Acceleration"), colnames(df))],
+      summary_df,
+      caption  = "Une ligne = une session (date) entièrement exclue",
       options  = list(pageLength = 10, scrollX = TRUE),
       rownames = FALSE
     )
@@ -492,17 +612,30 @@ server <- function(input, output, session) {
     req(outlier_results())
     df <- outlier_results()$measurement_error
 
-    # Appliquer les filtres vitesse / accélération si disponibles
-    if (!is.null(input$speed_range) && nrow(df) > 0) {
-      df <- df[df$Speed >= input$speed_range[1] & df$Speed <= input$speed_range[2], , drop = FALSE]
-    }
-    if (!is.null(input$accel_range) && nrow(df) > 0) {
-      df <- df[df$Acceleration >= input$accel_range[1] & df$Acceleration <= input$accel_range[2], , drop = FALSE]
+    if (nrow(df) == 0) {
+      return(DT::datatable(
+        data.frame(Message = "Aucune erreur de mesure détectée"),
+        options = list(dom = "t"), rownames = FALSE
+      ))
     }
 
+    # Appliquer filtres joueur / date
+    if (!is.null(input$player_filter) && nzchar(input$player_filter))
+      df <- df[df$Player == input$player_filter, , drop = FALSE]
+    if (!is.null(input$date_filter) && length(input$date_filter) > 0)
+      df <- df[format(df$Date, "%d/%m/%Y") %in% input$date_filter, , drop = FALSE]
+
+    cols <- intersect(c("Player", "Date", "Speed", "Acceleration"), colnames(df))
+    display_df <- df[, cols, drop = FALSE]
+    if ("Speed"        %in% cols) display_df$Speed        <- round(display_df$Speed,        3)
+    if ("Acceleration" %in% cols) display_df$Acceleration <- round(display_df$Acceleration, 3)
+    if ("Date"         %in% cols) display_df$Date         <- format(display_df$Date, "%d/%m/%Y")
+
     DT::datatable(
-      df[, intersect(c("Player", "Date", "Speed", "Acceleration"), colnames(df))],
-      options  = list(pageLength = 10, scrollX = TRUE),
+      display_df,
+      caption  = paste0("Points exclus par DBSCAN (eps=", input$eps_dbscan,
+                        ", minPts=", input$neighb_dbscan, ")"),
+      options  = list(pageLength = 15, scrollX = TRUE),
       rownames = FALSE
     )
   })

@@ -223,7 +223,8 @@ run_outlier_detection <- function(points,
                                   neighb_DBSCAN = NEIGHB_DBSCAN) {
 
   # Étape 1 : supprimer les accélérations négatives
-  correct <- remove_negative_acceleration(points)
+  correct    <- remove_negative_acceleration(points)
+  n_negative <- nrow(points) - nrow(correct)
 
   # Étape 2 : détecter les erreurs de mauvaise utilisation
   res_misuse <- identify_misuse_errors(correct, nb_outlier)
@@ -236,6 +237,7 @@ run_outlier_detection <- function(points,
   list(
     correct_points    = correct,
     misuse_error      = res_misuse$misuse_error,
-    measurement_error = res_measure$measurement_error
+    measurement_error = res_measure$measurement_error,
+    n_negative        = n_negative
   )
 }
