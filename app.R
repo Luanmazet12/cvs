@@ -14,6 +14,12 @@ library(quantreg)
 # Opérateur null-coalescing
 `%||%` <- function(a, b) if (!is.null(a)) a else b
 
+# Constantes de la méthode JB Morin
+MAX_ACCEL_MS2 <- 10.93   # accélération maximale théorique (m/s²)
+MAX_SPEED_MS  <- 10.5    # vitesse maximale théorique (m/s)
+PLOT_XLIM     <- 11      # limite de l'axe vitesse sur les graphiques (m/s)
+PLOT_YLIM     <- 11      # limite de l'axe accélération sur les graphiques (m/s²)
+
 # ============================================================================
 # FONCTIONS UTILITAIRES
 # ============================================================================
@@ -82,27 +88,29 @@ identify_high_intensity <- function(df, dv = 0.3, n_max = 2) {
 }
 
 # Détection erreurs de mesure (DBSCAN)
+# Returns character rownames of noise points (rownames are preserved through R subsetting)
 detect_measurement_errors <- function(df, eps = 0.5, min_pts = 3) {
-  df_sub <- df[df$Acceleration >= (5 - df$Speed), ]
-  if (nrow(df_sub) == 0) return(integer(0))
+  ACCEL_THRESHOLD <- 5  # m/s² – lower bound above which points are candidates for DBSCAN
+  df_sub <- df[df$Acceleration >= (ACCEL_THRESHOLD - df$Speed), ]
+  if (nrow(df_sub) == 0) return(character(0))
 
-  bad_idx <- c()
+  bad_rnames <- character(0)
   for (pl in unique(df_sub$Player)) {
     pts <- df_sub[df_sub$Player == pl, c("Speed", "Acceleration")]
     if (nrow(pts) < min_pts) next
     res   <- dbscan::dbscan(as.matrix(pts), eps = eps, minPts = min_pts)
     noise <- which(res$cluster == 0)   # 0 = bruit dans le package R dbscan
     if (length(noise) > 0) {
-      bad_idx <- c(bad_idx, as.integer(rownames(pts)[noise]))
+      bad_rnames <- c(bad_rnames, rownames(pts)[noise])
     }
   }
-  bad_idx
+  bad_rnames
 }
 
 # Détection erreurs de mauvaise utilisation (formule JB Morin)
 detect_misuse_errors <- function(df, nb_outlier = 10) {
   df_pos <- df[df$Acceleration >= 0, ]
-  threshold <- 10.93 - (10.93 / 10.5) * df_pos$Speed
+  threshold <- MAX_ACCEL_MS2 - (MAX_ACCEL_MS2 / MAX_SPEED_MS) * df_pos$Speed
   df_pos$is_misuse <- df_pos$Acceleration >= threshold
 
   df_pos %>%
@@ -111,6 +119,11 @@ detect_misuse_errors <- function(df, nb_outlier = 10) {
     mutate(n_errors = n()) %>%
     ungroup() %>%
     filter(n_errors >= nb_outlier)
+}
+
+# Helper: compute misuse threshold from JB Morin constants
+misuse_threshold <- function(speed) {
+  MAX_ACCEL_MS2 - (MAX_ACCEL_MS2 / MAX_SPEED_MS) * speed
 }
 
 # Régression linéaire par joueur
@@ -198,9 +211,9 @@ ui <- dashboardPage(
           box(title = "Filtrage interactif", status = "info",
               solidHeader = TRUE, width = 12,
               sliderInput("speed_range", "Plage de vitesse (m/s) :",
-                          min = 0, max = 11, value = c(0, 11), step = 0.1),
+                          min = 0, max = PLOT_XLIM, value = c(0, PLOT_XLIM), step = 0.1),
               sliderInput("accel_range", "Plage d'accélération (m/s²) :",
-                          min = 0, max = 11, value = c(0, 11), step = 0.1)
+                          min = 0, max = PLOT_XLIM, value = c(0, PLOT_XLIM), step = 0.1)
           )
         ),
         fluidRow(
@@ -358,10 +371,10 @@ server <- function(input, output, session) {
       df_clean  <- df[!df$Date %in% bad_dates, ]
 
       # Erreurs de mesure (DBSCAN)
-      bad_idx <- detect_measurement_errors(df_clean, input$eps, input$min_pts)
-      rv$measurement <- df_clean[rownames(df_clean) %in% as.character(bad_idx), ]
-      if (length(bad_idx) > 0) {
-        df_clean <- df_clean[!rownames(df_clean) %in% as.character(bad_idx), ]
+      bad_rnames <- detect_measurement_errors(df_clean, input$eps, input$min_pts)
+      rv$measurement <- df_clean[rownames(df_clean) %in% bad_rnames, ]
+      if (length(bad_rnames) > 0) {
+        df_clean <- df_clean[!rownames(df_clean) %in% bad_rnames, ]
       }
       rv$clean <- df_clean
 
@@ -425,7 +438,7 @@ server <- function(input, output, session) {
 
     p <- ggplot(df, aes(x = Speed, y = Acceleration)) +
       geom_point(alpha = 0.4, size = 1.5, color = "steelblue") +
-      coord_cartesian(xlim = c(0, 11), ylim = c(0, 11)) +
+      coord_cartesian(xlim = c(0, PLOT_XLIM), ylim = c(0, PLOT_YLIM)) +
       theme_minimal() +
       labs(title = "Détection des Outliers", x = "Vitesse (m/s)", y = "Accélération (m/s²)")
 
@@ -470,7 +483,7 @@ server <- function(input, output, session) {
       geom_point(alpha = 0.3, size = 1.5, color = "steelblue") +
       geom_point(data = hi, aes(x = Speed, y = Acceleration),
                  color = "red", size = 2.5, alpha = 0.9) +
-      coord_cartesian(xlim = c(0, 11), ylim = c(0, 11)) +
+      coord_cartesian(xlim = c(0, PLOT_XLIM), ylim = c(0, PLOT_YLIM)) +
       theme_minimal() +
       labs(title = "Profil Accélération–Vitesse",
            x = "Vitesse (m/s)", y = "Accélération (m/s²)",
@@ -542,7 +555,7 @@ server <- function(input, output, session) {
       if (is.null(df)) return()
       p <- ggplot(df, aes(x = Speed, y = Acceleration)) +
         geom_point(alpha = 0.4, size = 1.5, color = "steelblue") +
-        coord_cartesian(xlim = c(0, 11), ylim = c(0, 11)) +
+        coord_cartesian(xlim = c(0, PLOT_XLIM), ylim = c(0, PLOT_YLIM)) +
         theme_minimal() +
         labs(title = "Détection des Outliers",
              x = "Vitesse (m/s)", y = "Accélération (m/s²)")
@@ -567,7 +580,7 @@ server <- function(input, output, session) {
         geom_point(alpha = 0.3, size = 1.5, color = "steelblue") +
         geom_point(data = hi, aes(x = Speed, y = Acceleration),
                    color = "red", size = 2.5, alpha = 0.9) +
-        coord_cartesian(xlim = c(0, 11), ylim = c(0, 11)) +
+        coord_cartesian(xlim = c(0, PLOT_XLIM), ylim = c(0, PLOT_YLIM)) +
         theme_minimal() +
         labs(title = "Profil Accélération–Vitesse",
              x = "Vitesse (m/s)", y = "Accélération (m/s²)")
