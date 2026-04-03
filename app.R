@@ -6,37 +6,41 @@
 # source("app.R"), et double-clic sur app.R (Windows/macOS).
 .app_dir <- local({
 
-  # ---- Helpers ----
   .norm <- function(p) {
     tryCatch(
       normalizePath(p, winslash = "/", mustWork = FALSE),
       error = function(e) NULL
     )
   }
-  .valid <- function(d) !is.null(d) && nzchar(d) && file.exists(file.path(d, "global.R"))
+  .ok <- function(d) !is.null(d) && nzchar(d)
 
   # Priorité 1 : argument --file= (Rscript app.R depuis un autre répertoire)
   rarg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
   if (length(rarg) > 0) {
     d <- .norm(dirname(sub("^--file=", "", rarg[1])))
-    if (.valid(d)) return(d)
+    if (.ok(d)) return(d)
   }
 
-  # Priorité 2 : fichier actif dans RStudio (bouton "Run App" ou source())
-  if (requireNamespace("rstudioapi", quietly = TRUE)) {
-    d <- tryCatch({
-      ctx <- rstudioapi::getActiveDocumentContext()
-      if (!is.null(ctx) && nzchar(ctx$path)) .norm(dirname(ctx$path)) else NULL
-    }, error = function(e) NULL)
-    if (.valid(d)) return(d)
-  }
+  # Priorité 2 : rstudioapi — getSourceEditorContext() est le plus fiable
+  # pour le bouton "Run App" (pas besoin de requireNamespace ; tryCatch suffit).
+  d <- tryCatch({
+    p <- rstudioapi::getSourceEditorContext()$path
+    if (nzchar(p)) .norm(dirname(p)) else NULL
+  }, error = function(e) NULL)
+  if (.ok(d)) return(d)
+
+  d <- tryCatch({
+    p <- rstudioapi::getActiveDocumentContext()$path
+    if (nzchar(p)) .norm(dirname(p)) else NULL
+  }, error = function(e) NULL)
+  if (.ok(d)) return(d)
 
   # Priorité 3 : fichier en cours de source() dans la pile d'appels
   for (i in seq_len(sys.nframe())) {
     ofile <- tryCatch(sys.frame(i)$ofile, error = function(e) NULL)
     if (!is.null(ofile) && nzchar(ofile)) {
       d <- .norm(dirname(ofile))
-      if (.valid(d)) return(d)
+      if (.ok(d)) return(d)
     }
   }
 
