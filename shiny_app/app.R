@@ -9,6 +9,10 @@
 #                      "quantreg","dbscan","DT"))
 # =============================================================================
 
+# Limites des axes des graphiques (m/s et m/s²)
+AXIS_MAX_SPEED <- 11
+AXIS_MAX_ACC   <- 11
+
 library(shiny)
 library(shinydashboard)
 library(dplyr)
@@ -68,7 +72,7 @@ read_openfield_csv <- function(filepath) {
       Speed        = as.numeric(Speed) / 3.6,
       Acceleration = as.numeric(Acceleration),
       Player       = athlete,
-      Date         = as.character(.data[[names(df)[1]]])  # première colonne = Timestamp
+      Date         = as.character(Timestamp)
     )
 
   df
@@ -179,13 +183,13 @@ identify_high_intensity_points <- function(points, dv = 0.3, n_max = 2) {
 
 #' Régression linéaire Acceleration ~ Speed par joueur
 #' Retourne a0 (intercept) et s0 = -a0/b (vitesse maximale théorique)
-compute_linear_regression <- function(hi_points) {
+compute_linear_regression <- function(hi_points, r2_threshold = 0.5) {
   hi_points %>%
     group_by(Player) %>%
     group_modify(~ {
       model <- lm(Acceleration ~ Speed, data = .x)
       r2    <- summary(model)$r.squared
-      if (r2 <= 0.5) {
+      if (r2 <= r2_threshold) {
         warning(paste("Régression linéaire de faible qualité pour", unique(.x$Player)))
       }
       a0 <- coef(model)[["(Intercept)"]]
@@ -247,7 +251,7 @@ plot_outliers <- function(correct_points, measurement_error = NULL,
       title = paste("Outliers :", player),
       x = "Vitesse (m/s)", y = "Accélération (m/s²)"
     ) +
-    coord_cartesian(xlim = c(0, 11), ylim = c(0, 11)) +
+    coord_cartesian(xlim = c(0, AXIS_MAX_SPEED), ylim = c(0, AXIS_MAX_ACC)) +
     theme_minimal(base_size = 13)
 
   if (!is.null(measurement_error) && nrow(measurement_error) > 0) {
@@ -286,7 +290,7 @@ plot_linear_regression <- function(points, hi_points, linear_results, player) {
              label = sprintf("s0 = %.2f m/s",  s0), colour = "red", size = 4) +
     labs(title = paste("Régression linéaire :", player),
          x = "Vitesse (m/s)", y = "Accélération (m/s²)") +
-    coord_cartesian(xlim = c(0, 11), ylim = c(0, 11)) +
+    coord_cartesian(xlim = c(0, AXIS_MAX_SPEED), ylim = c(0, AXIS_MAX_ACC)) +
     theme_minimal(base_size = 13)
 }
 
@@ -334,7 +338,7 @@ plot_quantile_regression <- function(points, hi_points, quantile_results,
   p +
     labs(title = paste("Profil Accélération-Vitesse :", player),
          x = "Vitesse (m/s)", y = "Accélération (m/s²)") +
-    coord_cartesian(xlim = c(0, 11), ylim = c(0, 11)) +
+    coord_cartesian(xlim = c(0, AXIS_MAX_SPEED), ylim = c(0, AXIS_MAX_ACC)) +
     theme_minimal(base_size = 13)
 }
 
@@ -360,7 +364,8 @@ ui <- dashboardPage(
     numericInput("n_max",        "Points max / intervalle",      value = 2,   min = 1,   max = 5),
     numericInput("nb_outlier",   "Seuil erreur utilisation",     value = 10,  min = 1),
     numericInput("eps_dbscan",   "Eps DBSCAN",                   value = 0.5, min = 0.1, step = 0.1),
-    numericInput("neighb_dbscan","Min points DBSCAN",            value = 3,   min = 1)
+    numericInput("neighb_dbscan","Min points DBSCAN",            value = 3,   min = 1),
+    numericInput("r2_threshold", "Seuil R² (régr. linéaire)",   value = 0.5, min = 0, max = 1, step = 0.05)
   ),
 
   dashboardBody(
@@ -594,7 +599,7 @@ server <- function(input, output, session) {
       hi_points_data(hi_pts)
 
       if (input$use_linear) {
-        linear_results_data(compute_linear_regression(hi_pts))
+        linear_results_data(compute_linear_regression(hi_pts, r2_threshold = input$r2_threshold))
       }
 
       if (input$use_quantile) {
