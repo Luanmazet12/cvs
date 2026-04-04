@@ -1,8 +1,8 @@
 # global.R - Variables globales et chargements de packages
 # Application Dashboard Profilage Accélération-Vitesse
 
-# Taille maximale d'upload : 200 MB (les exports OpenField peuvent être volumineux)
-options(shiny.maxRequestSize = 200 * 1024^2)
+# Taille maximale d'upload : 500 MB (les exports OpenField peuvent être volumineux)
+options(shiny.maxRequestSize = 500 * 1024^2)
 
 # Liste des packages requis
 required_packages <- c(
