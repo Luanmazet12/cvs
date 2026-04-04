@@ -874,14 +874,15 @@ server <- function(input, output, session) {
         alpha = 0.9, size = 2, color = "#F44336"
       )
 
-    # Tracer les droites quantiles en gris clair (approche vectorisée pour éviter
-    # le bug ggplot2 : aes() dans une boucle for capture la valeur finale de la variable)
+    # Tracer les droites quantiles en gris clair (approche vectorisée)
     sub_q       <- qd[seq(1, nrow(qd), by = 10), ]
     sub_q_valid <- sub_q[!is.na(sub_q$a0) & !is.na(sub_q$s0) & sub_q$s0 > 0, ]
     if (nrow(sub_q_valid) > 0) {
+      sub_q_valid$x_start <- 0
+      sub_q_valid$y_end   <- 0
       p <- p + geom_segment(
         data        = sub_q_valid,
-        aes(x = 0, y = a0, xend = s0, yend = 0),
+        aes(x = x_start, y = a0, xend = s0, yend = y_end),
         color       = "grey70",
         linetype    = "dotted",
         linewidth   = 0.4,
@@ -889,10 +890,12 @@ server <- function(input, output, session) {
       )
     }
 
-    # Droite moyenne quantile (coordonnées constantes passées hors de aes)
+    # Droite moyenne quantile
     if (!is.na(a0_mean) && !is.na(s0_mean) && s0_mean > 0) {
+      mean_seg <- data.frame(x = 0, y = a0_mean, xend = s0_mean, yend = 0)
       p <- p + geom_segment(
-        x = 0, y = a0_mean, xend = s0_mean, yend = 0,
+        data        = mean_seg,
+        aes(x = x, y = y, xend = xend, yend = yend),
         color       = "#F44336",
         linewidth   = 1,
         inherit.aes = FALSE
