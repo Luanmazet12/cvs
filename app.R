@@ -840,7 +840,7 @@ server <- function(input, output, session) {
         y     = "Accélération (m/s²)",
         title = paste("Régression linéaire :", input$player_select)
       ) +
-      xlim(0, MAX_PLOT_SPEED) + ylim(0, MAX_PLOT_ACCELERATION) +
+      coord_cartesian(xlim = c(0, MAX_PLOT_SPEED), ylim = c(0, MAX_PLOT_ACCELERATION)) +
       theme_minimal()
 
     ggplotly(p)
@@ -911,7 +911,7 @@ server <- function(input, output, session) {
         y     = "Accélération (m/s²)",
         title = paste("Régression quantile :", input$player_select)
       ) +
-      xlim(0, MAX_PLOT_SPEED) + ylim(0, MAX_PLOT_ACCELERATION) +
+      coord_cartesian(xlim = c(0, MAX_PLOT_SPEED), ylim = c(0, MAX_PLOT_ACCELERATION)) +
       theme_minimal()
 
     ggplotly(p)
