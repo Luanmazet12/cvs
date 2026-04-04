@@ -125,6 +125,25 @@ ui <- dashboardPage(
   ),
 
   dashboardBody(
+
+    # ---- CSS splash ----
+    tags$head(tags$style(HTML("
+      .splash-title {
+        font-size: 2.4em;
+        font-weight: bold;
+        text-align: center;
+        margin-top: 40px;
+        margin-bottom: 10px;
+        color: #2c3e50;
+      }
+      .splash-sub {
+        text-align: center;
+        color: #7f8c8d;
+        font-size: 1.1em;
+        margin-bottom: 40px;
+      }
+    "))),
+
     tabItems(
 
       # ---- Onglet Données ----
@@ -242,22 +261,6 @@ ui <- dashboardPage(
         tabName = "tab_regression",
         fluidRow(
           box(
-            title = "Régression linéaire",
-            width = 6,
-            status = "success",
-            solidHeader = TRUE,
-            plotlyOutput("linear_plot", height = "450px")
-          ),
-          box(
-            title = "Régression quantile",
-            width = 6,
-            status = "success",
-            solidHeader = TRUE,
-            plotlyOutput("quantile_plot", height = "450px")
-          )
-        ),
-        fluidRow(
-          box(
             title = "Sélectionner un joueur",
             width = 12,
             status = "primary",
@@ -269,6 +272,24 @@ ui <- dashboardPage(
               selected = NULL,
               width    = "300px"
             )
+          )
+        ),
+        fluidRow(
+          box(
+            title = "Régression linéaire",
+            width = 12,
+            status = "success",
+            solidHeader = TRUE,
+            plotlyOutput("linear_plot", height = "650px")
+          )
+        ),
+        fluidRow(
+          box(
+            title = "Régression quantile",
+            width = 12,
+            status = "success",
+            solidHeader = TRUE,
+            plotlyOutput("quantile_plot", height = "650px")
           )
         )
       ),
@@ -297,6 +318,29 @@ ui <- dashboardPage(
 # ============================================================
 
 server <- function(input, output, session) {
+
+  # ---- Splash screen ----
+  session$onFlushed(function() {
+    showModal(modalDialog(
+      title = NULL,
+      div(class = "splash-title", "\U0001F3C3 Bienvenue au test de la patience !"),
+      div(class = "splash-sub",  "Appuyez sur Entrée ou cliquez sur le bouton pour commencer"),
+      footer = actionButton(
+        "btn_splash_ok", "Commencer \u2192",
+        class = "btn-primary btn-lg",
+        style = "display:block; margin: 0 auto;"
+      ),
+      size       = "m",
+      easyClose  = FALSE,
+      tags$script(HTML("
+        $(document).on('keypress', function(e) {
+          if (e.which === 13) { $('#btn_splash_ok').click(); }
+        });
+      "))
+    ))
+  }, once = TRUE)
+
+  observeEvent(input$btn_splash_ok, { removeModal() })
 
   # ---- Réactifs ----
 
